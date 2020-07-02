@@ -97,4 +97,10 @@
     <string name="_19_00">19:00</string>
     <string name="_23_00">23:00</string>
 
+    <!--Zaturi start-->
+    <string name="intervention_time">스트레스 해소할 시간이에요!</string>
+    <string name="next_time">다음에 하기</string>
+    <string name="mute_today">오늘의 알림 끄기</string>
+    <string name="do_intervention">스트레스 해소하기</string>
+    <!--Zaturi end-->
 </resources>

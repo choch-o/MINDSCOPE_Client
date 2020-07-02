@@ -99,4 +99,10 @@
     <string name="_19_00">19:00</string>
     <string name="_23_00">23:00</string>
 
+    <!--Zaturi start-->
+    <string name="intervention_time">Time for stress relief!</string>
+    <string name="next_time">Next time</string>
+    <string name="mute_today">Mute today\'s notifications</string>
+    <string name="do_intervention">Relieve stress</string>
+    <!--Zaturi end-->
 </resources>

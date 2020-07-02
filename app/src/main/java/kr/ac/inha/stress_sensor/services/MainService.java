@@ -125,6 +125,12 @@ public class MainService extends Service {
                 loginPrefs = getSharedPreferences("UserLogin", MODE_PRIVATE);
                 SharedPreferences.Editor editor = loginPrefs.edit();
                 editor.putBoolean("ema_btn_make_visible", true);
+                /* Zaturi start */
+                // Reset didIntervention to false every 11AM
+                if (ema_order == 1) {
+                    editor.putBoolean("didIntervention", false);
+                }
+                /* Zaturi end */
                 editor.apply();
                 canSendNotif = false;
                 saveSomeStats(); //save some stats that we need only once per EMA is posted
@@ -248,6 +254,7 @@ public class MainService extends Service {
             heartBeatHandler.postDelayed(this, HEARTBEAT_PERIOD * 1000);
         }
     };
+
 
     @Override
     public void onCreate() {

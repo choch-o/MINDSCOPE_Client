@@ -5,7 +5,11 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.AppOpsManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.usage.UsageEvents;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
@@ -18,6 +22,8 @@ import android.location.LocationManager;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import android.provider.Settings;
 import android.util.Log;
@@ -35,6 +41,7 @@ import com.google.android.gms.tasks.OnSuccessListener;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -48,6 +55,7 @@ import kr.ac.inha.stress_sensor.receivers.GeofenceReceiver;
 import kr.ac.inha.stress_sensor.services.MainService;
 import kr.ac.inha.stress_sensor.services.LocationService;
 
+import static android.app.Notification.CATEGORY_ALARM;
 import static android.content.Context.MODE_PRIVATE;
 import static kr.ac.inha.stress_sensor.EMAActivity.EMA_NOTIF_HOURS;
 import static kr.ac.inha.stress_sensor.services.MainService.EMA_RESPONSE_EXPIRE_TIME;
@@ -63,6 +71,24 @@ public class Tools {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
     };
+
+    /* Zaturi start */
+    static String[] COMMUNICATION_APPS = {
+            "com.kakao.talk",                       // KakaoTalk
+            "com.facebook.orca",                    // Messenger
+            "com.facebook.mlite",                   // Messenger Lite
+            "jp.naver.line.android",                // Line
+            "com.linecorp.linelite",                // Line Lite
+            "com.Slack",                            // Slack
+            "com.google.android.apps.messaging",    // Text message
+            "kr.co.vcnc.android.couple",            // Between
+            "org.telegram.messenger",               // Telegram
+            "com.discord",                          // Discord
+            "com.tencent.mm",                       // WeChat
+            "com.samsung.android.messaging",        // Samsumg Messaging
+    };
+    public static final int ZATURI_NOTIFICATION_ID = 2222;
+    /* Zaturi end */
 
     public static boolean hasPermissions(Context con, String... permissions) {
         Context context = con.getApplicationContext();
@@ -149,6 +175,79 @@ public class Tools {
         String launcher_packageName = localPackageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY).activityInfo.packageName;
 
         UsageStatsManager usageStatsManager = (UsageStatsManager) con.getSystemService(Context.USAGE_STATS_SERVICE);
+
+        /* Zaturi start */
+
+        // Check if between 11am and 11pm
+        if (isBetween11am11pm()) {
+            // If user didn't perform stress intervention today
+            if (!loginPrefs.getBoolean("didIntervention", false)) {
+                // TODO: Check if the last self stress report was LITTLE_HIGH or HIGH
+                // if (lastSelfReport == LITTL_HIGH || lastSelfReport == HIGH) {
+
+                // Retrieve usage events in the last 3 seconds
+                UsageEvents.Event currentEvent;
+                UsageEvents usageEvents = usageStatsManager.queryEvents(
+                        System.currentTimeMillis() - 3000,
+                        System.currentTimeMillis());
+                // Get time of last phone usage (except communication apps)
+//            long zaturiLastPhoneUsage = loginPrefs.getLong("zaturiLastPhoneUsage", -1);
+                long zaturiLastPhoneUsage = loginPrefs.getLong("zaturiLastPhoneUsage", System.currentTimeMillis());
+                while (usageEvents.hasNextEvent()) {
+                    currentEvent = new UsageEvents.Event();
+                    usageEvents.getNextEvent(currentEvent);
+                    String packageName = currentEvent.getPackageName();
+                    // For all apps except communication apps
+                    Log.d("ZATURI", "packageName: " + packageName);
+                    if (!Arrays.asList(COMMUNICATION_APPS).contains(packageName)
+                            && !packageName.contains(launcher_packageName)) {
+                        // When an app is opened/resumed
+                        if (currentEvent.getEventType() == UsageEvents.Event.ACTIVITY_RESUMED) {
+                            // If the interval from last usage > 10 min
+                            if (System.currentTimeMillis() - zaturiLastPhoneUsage > 600000) {
+                                // Turn on flag for timer and set the timer
+                                // & remember the package name
+                                SharedPreferences.Editor editor = loginPrefs.edit();
+                                editor.putBoolean("zaturiTimerOn", true);
+                                editor.putLong("zaturiTimerStart", currentEvent.getTimeStamp());
+                                editor.putString("zaturiPackage", packageName);
+                                editor.apply();
+                            }
+                        } else if (currentEvent.getEventType() == UsageEvents.Event.ACTIVITY_PAUSED
+                                || currentEvent.getEventType() == UsageEvents.Event.ACTIVITY_STOPPED) {
+                            // When an app closes
+                            // Check if timer is on
+                            if (loginPrefs.getBoolean("zaturiTimerOn", false)) {
+                                // Check if the package name matches
+                                if (packageName.equals(loginPrefs.getString("zaturiPackage", ""))) {
+                                    // Check if the usage duration < 30 sec
+                                    if (currentEvent.getTimeStamp() -
+                                            loginPrefs.getLong("zaturiTimerStart", 0) < 30000) {
+                                        // Then send a notification
+                                        sendStressInterventionNoti(con);
+
+                                        // Reset the variables
+                                        SharedPreferences.Editor editor = loginPrefs.edit();
+                                        editor.putBoolean("zaturiTimerOn", false);
+                                        editor.putLong("zaturiTimerStart", 0);
+                                        editor.putString("zaturiPackage", "");
+                                        editor.apply();
+                                    }
+                                }
+                            }
+
+                            // Save last phone usage time (except for communication app usage)
+                            SharedPreferences.Editor editor = loginPrefs.edit();
+                            editor.putLong("zaturiLastPhoneUsage", currentEvent.getTimeStamp());
+                            editor.apply();
+                        }
+                    }
+                }
+                // }
+            }
+        }
+        /* Zaturi end */
+
         List<UsageStats> stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, fromCal.getTimeInMillis(), System.currentTimeMillis());
         for (UsageStats usageStats : stats) {
             //do not include launcher's package name
@@ -300,6 +399,95 @@ public class Tools {
     public static boolean inRange(long value, long start, long end) {
         return start < value && value < end;
     }
+
+    /* Zaturi start */
+    private static boolean isBetween11am11pm() {
+        // Check if the current time is between 11AM and 11PM
+        int start = 11;
+        int end = 23;
+        int hours = (end - start) % 24;
+
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, start);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+
+        long startHourMilli = cal.getTimeInMillis();
+        cal.add(Calendar.HOUR_OF_DAY, hours);
+        long endHourMilli = cal.getTimeInMillis();
+        return System.currentTimeMillis() >= startHourMilli
+                && System.currentTimeMillis() <= endHourMilli;
+    }
+
+    private static void sendStressInterventionNoti(Context con) {
+        // Create and send stress intervention notification
+
+        final NotificationManager notificationManager = (NotificationManager)
+                con.getSystemService(Context.NOTIFICATION_SERVICE);
+
+//        Intent notificationIntent = new Intent(MainService.this, EMAActivity.class);
+        Intent nextTimeIntent = new Intent();
+        Intent muteTodayIntent = new Intent();  // TODO: set didIntervention to true (to mute)
+        Intent stressRelIntent = new Intent();  // TODO: switch to 마음 케어 tab
+        // TODO: set didIntervention to true & log to gRPC
+
+        PendingIntent nextTimePI = PendingIntent.getActivity(con,
+                1, nextTimeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent muteTodayPI = PendingIntent.getActivity(con,
+                1, muteTodayIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent stressRelPI = PendingIntent.getActivity(con,
+                1, stressRelIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+
+        NotificationCompat.Action nextTimeAction =
+                new NotificationCompat.Action.Builder(
+                        R.mipmap.ic_launcher_no_bg,
+                        con.getString(R.string.next_time),
+                        nextTimePI).build();
+        NotificationCompat.Action muteTodayAction =
+                new NotificationCompat.Action.Builder(
+                        R.mipmap.ic_launcher_no_bg,
+                        con.getString(R.string.mute_today),
+                        muteTodayPI).build();
+        NotificationCompat.Action stressRelAction =
+                new NotificationCompat.Action.Builder(
+                        R.mipmap.ic_launcher_no_bg,
+                        con.getString(R.string.do_intervention),
+                        stressRelPI).build();
+
+        String channelId = con.getString(R.string.notif_channel_id);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                con.getApplicationContext(), channelId);
+        builder.setContentTitle(con.getString(R.string.app_name))
+                .setTimeoutAfter(1000 * EMA_RESPONSE_EXPIRE_TIME)
+                .setContentText("#산책5분하기") // TODO: Replace with currently set intervention
+                .setTicker("New Message Alert!")
+                .setAutoCancel(true)
+                .setContentIntent(stressRelPI)
+                .setCategory(CATEGORY_ALARM)
+                .addAction(nextTimeAction)
+                .addAction(muteTodayAction)
+                .addAction(stressRelAction)
+                .setSmallIcon(R.mipmap.ic_launcher_no_bg)
+                .setPriority(NotificationCompat.PRIORITY_MAX);
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(channelId,
+                    con.getString(R.string.app_name), NotificationManager.IMPORTANCE_HIGH);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
+        }
+
+        final Notification notification = builder.build();
+        if (notificationManager != null) {
+            notificationManager.notify(ZATURI_NOTIFICATION_ID, notification);
+        }
+    }
+    /* Zaturi end */
 }
 
 class GeofenceHelper {
