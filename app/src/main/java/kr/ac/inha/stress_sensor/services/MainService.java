@@ -125,13 +125,16 @@ public class MainService extends Service {
                 loginPrefs = getSharedPreferences("UserLogin", MODE_PRIVATE);
                 SharedPreferences.Editor editor = loginPrefs.edit();
                 editor.putBoolean("ema_btn_make_visible", true);
+                editor.apply();
                 /* Zaturi start */
                 // Reset didIntervention to false every 11AM
+                SharedPreferences interventionPrefs = getSharedPreferences("intervention", MODE_PRIVATE);
+                SharedPreferences.Editor interventionEditor = interventionPrefs.edit();
                 if (ema_order == 1) {
-                    editor.putBoolean("didIntervention", false);
+                    interventionEditor.putBoolean("didIntervention", false);
                 }
+                interventionEditor.apply();
                 /* Zaturi end */
-                editor.apply();
                 canSendNotif = false;
                 saveSomeStats(); //save some stats that we need only once per EMA is posted
             }
